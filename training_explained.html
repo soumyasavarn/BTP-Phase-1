@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Humanoid-v4 RL: Success, Loss, I/O and Training Loop Explained</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+:root {
+  --ink:         #1c1c1e;
+  --ink-2:       #3a3a3c;
+  --ink-3:       #636366;
+  --ink-4:       #aeaeb2;
+  --bg:          #ffffff;
+  --bg-2:        #f5f5f0;
+  --bg-3:        #ebebea;
+  --rule:        #d1d1d6;
+  --rule-2:      #e8e8e4;
+  --blue:        #1d3a6e;
+  --blue-lt:     #eef1f8;
+  --blue-mid:    #4a6fa5;
+  --red:         #7a1e1e;
+  --red-lt:      #faf0f0;
+  --amber:       #6b4700;
+  --amber-lt:    #fdf6e8;
+  --green:       #1a4a28;
+  --green-lt:    #edf5f0;
+  --teal:        #0a4a4a;
+  --teal-lt:     #eaf4f4;
+  --max-w:       860px;
+  --wide-w:      1080px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 300;
+  font-size: 15px;
+  line-height: 1.8;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── PAGE SHELL ─── */
+.page { max-width: var(--wide-w); margin: 0 auto; padding: 0 28px 100px; }
+
+/* ─── RUNNING HEADER ─── */
+.running-head {
+  border-bottom: 1px solid var(--rule);
+  padding: 18px 0;
+  margin-bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.running-head span {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--ink-4);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ─── TITLE BLOCK ─── */
+.title-block {
+  padding: 52px 0 40px;
+  border-bottom: 3px double var(--rule);
+  margin-bottom: 52px;
+  max-width: var(--max-w);
+}
+.title-block .kicker {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--blue-mid);
+  margin-bottom: 16px;
+}
+.title-block h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(1.8rem, 3.8vw, 2.9rem);
+  font-weight: 700;
+  line-height: 1.18;
+  color: var(--ink);
+  margin-bottom: 22px;
+  letter-spacing: -0.01em;
+}
+.title-block .precis {
+  font-size: 0.95rem;
+  color: var(--ink-3);
+  max-width: 680px;
+  line-height: 1.75;
+  border-left: 3px solid var(--rule);
+  padding-left: 18px;
+  font-style: italic;
+}
+
+/* ─── TWO-COLUMN BODY ─── */
+.body-grid {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 0 52px;
+  align-items: start;
+}
+.sidebar { position: sticky; top: 28px; }
+.sidebar nav { border: 1px solid var(--rule-2); background: var(--bg-2); padding: 20px 18px; }
+.sidebar nav h4 {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule-2);
+}
+.sidebar nav ol { padding-left: 16px; }
+.sidebar nav li { margin-bottom: 7px; list-style-type: decimal; }
+.sidebar nav a {
+  font-size: 0.78rem;
+  color: var(--blue);
+  text-decoration: none;
+  line-height: 1.4;
+  display: block;
+}
+.sidebar nav a:hover { text-decoration: underline; }
+.sidebar nav a.sub { padding-left: 10px; color: var(--ink-3); font-size: 0.73rem; }
+
+/* ─── MAIN CONTENT ─── */
+.main {}
+
+/* ─── SECTIONS ─── */
+section { margin-bottom: 64px; }
+.sec-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  display: block;
+  margin-bottom: 6px;
+}
+section > h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.55rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule);
+  line-height: 1.25;
+}
+section h3 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.12rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 32px 0 10px;
+}
+section h4 {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 22px 0 8px;
+}
+p { color: var(--ink-2); margin-bottom: 14px; font-size: 0.935rem; line-height: 1.8; }
+strong { color: var(--ink); font-weight: 500; }
+
+/* ─── CALLOUTS ─── */
+.box {
+  border-left: 4px solid;
+  padding: 15px 18px;
+  margin: 20px 0;
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+.box p { font-size: 0.875rem; margin: 0; color: inherit; }
+.box .box-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 7px;
+  display: block;
+  font-weight: 500;
+}
+.box.def    { border-color: var(--blue);   background: var(--blue-lt);  color: #1a2a50; }
+.box.warn   { border-color: #b06000;       background: var(--amber-lt); color: #4a3000; }
+.box.result { border-color: var(--green);  background: var(--green-lt); color: #0a3018; }
+.box.key    { border-color: var(--teal);   background: var(--teal-lt);  color: #0a3030; }
+.box.error  { border-color: var(--red);    background: var(--red-lt);   color: #5a0a0a; }
+
+/* ─── CODE ─── */
+code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.82em;
+  background: var(--bg-2);
+  border: 1px solid var(--rule-2);
+  padding: 1px 6px;
+  border-radius: 2px;
+  color: var(--ink);
+}
+pre {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  line-height: 1.65;
+  background: var(--bg-2);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--blue-mid);
+  padding: 18px 20px;
+  overflow-x: auto;
+  margin: 16px 0 22px;
+  color: var(--ink);
+  white-space: pre;
+}
+pre .comment { color: var(--ink-4); }
+pre .kw      { color: var(--blue);  font-weight: 500; }
+pre .val     { color: var(--green); }
+pre .label   { color: var(--red);   font-weight: 500; }
+
+/* ─── MATH-STYLE EQUATION BLOCKS ─── */
+.eq {
+  background: var(--bg-2);
+  border: 1px solid var(--rule-2);
+  padding: 18px 24px;
+  margin: 18px 0;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.84rem;
+  line-height: 1.9;
+  color: var(--ink);
+}
+.eq .eq-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  display: block;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--rule-2);
+  padding-bottom: 6px;
+}
+.eq .highlight { color: var(--blue); font-weight: 500; }
+.eq .note { color: var(--ink-4); font-size: 0.76rem; }
+
+/* ─── SVG FLOW DIAGRAMS ─── */
+.diagram {
+  background: var(--bg-2);
+  border: 1px solid var(--rule);
+  padding: 24px 20px 16px;
+  margin: 20px 0 28px;
+  overflow-x: auto;
+}
+.diagram svg { display: block; margin: 0 auto; }
+.diagram figcaption {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--ink-4);
+  text-align: center;
+  margin-top: 12px;
+  letter-spacing: 0.04em;
+}
+
+/* ─── DATA TABLES ─── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.845rem;
+  margin: 16px 0 24px;
+}
+caption {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--ink-4);
+  text-align: left;
+  padding-bottom: 8px;
+  letter-spacing: 0.04em;
+  caption-side: bottom;
+  padding-top: 8px;
+}
+th {
+  background: var(--bg-3);
+  border: 1px solid var(--rule);
+  padding: 9px 13px;
+  text-align: left;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+td {
+  border: 1px solid var(--rule-2);
+  padding: 9px 13px;
+  vertical-align: top;
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+tr:hover td { background: var(--blue-lt); }
+.mono { font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; color: var(--ink); }
+
+/* ─── NUMBERED LISTS ─── */
+ol.body-list { padding-left: 22px; margin: 12px 0 18px; }
+ol.body-list li { color: var(--ink-2); font-size: 0.935rem; margin-bottom: 8px; line-height: 1.7; }
+
+/* ─── INLINE PILL ─── */
+.pill {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  padding: 1px 8px;
+  border-radius: 2px;
+  border: 1px solid;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.pill.i  { border-color: var(--blue-mid);  color: var(--blue); background: var(--blue-lt); }
+.pill.o  { border-color: #6a9a60;          color: var(--green);background: var(--green-lt); }
+.pill.l  { border-color: #9a6a20;          color: var(--amber);background: var(--amber-lt); }
+
+/* ─── HR ─── */
+hr { border: none; border-top: 1px solid var(--rule-2); margin: 40px 0; }
+
+/* ─── REFS ─── */
+.refs ol { padding-left: 22px; }
+.refs li { font-size: 0.835rem; color: var(--ink-3); line-height: 1.65; margin-bottom: 9px; }
+.refs li em { color: var(--ink-2); }
+.refs .arxiv { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: var(--ink-4); }
+
+@media (max-width: 720px) {
+  .body-grid { grid-template-columns: 1fr; }
+  .sidebar { position: static; display: none; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- RUNNING HEAD -->
+<div class="running-head">
+  <span>Technical Report &mdash; Deep Reinforcement Learning</span>
+  <span>Humanoid-v4 &bull; MuJoCo &bull; SAC / CrossQ</span>
+</div>
+
+<!-- TITLE -->
+<div class="title-block">
+  <div class="kicker">Pedagogical Reference</div>
+  <h1>Success Measurement, Loss Functions,<br>Inputs, Outputs, and the Training Loop<br>in Humanoid-v4 Reinforcement Learning</h1>
+  <p class="precis">
+    A ground-up explanation of how reward is defined, how success is measured quantitatively,
+    what every network consumes and produces, what each loss function optimizes and why,
+    and how all components interlock into a single training loop. Written for Humanoid-v4
+    with Soft Actor-Critic (V4) and CrossQ (SOTA).
+  </p>
+</div>
+
+<!-- BODY -->
+<div class="body-grid">
+
+<!-- SIDEBAR NAV -->
+<div class="sidebar">
+  <nav>
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#s1">What is success?</a></li>
+      <li><a href="#s2">Reward signal</a>
+        <a href="#s2a" class="sub">2.1 Components</a>
+        <a href="#s2b" class="sub">2.2 Normalization</a>
+      </li>
+      <li><a href="#s3">Inputs and outputs</a>
+        <a href="#s3a" class="sub">3.1 Observation vector</a>
+        <a href="#s3b" class="sub">3.2 Action vector</a>
+        <a href="#s3c" class="sub">3.3 Each network's I/O</a>
+      </li>
+      <li><a href="#s4">Loss functions</a>
+        <a href="#s4a" class="sub">4.1 Critic loss</a>
+        <a href="#s4b" class="sub">4.2 Actor loss</a>
+        <a href="#s4c" class="sub">4.3 Entropy loss</a>
+        <a href="#s4d" class="sub">4.4 CrossQ differences</a>
+      </li>
+      <li><a href="#s5">Training loop</a>
+        <a href="#s5a" class="sub">5.1 Step-by-step</a>
+        <a href="#s5b" class="sub">5.2 Pseudocode</a>
+        <a href="#s5c" class="sub">5.3 Update order</a>
+      </li>
+      <li><a href="#s6">Success metrics</a></li>
+      <li><a href="#s7">References</a></li>
+    </ol>
+  </nav>
+</div>
+
+<!-- MAIN -->
+<main class="main">
+
+<!-- ═══════════════════════════════
+     S1: WHAT IS SUCCESS
+═══════════════════════════════ -->
+<section id="s1">
+  <span class="sec-label">Section 1</span>
+  <h2>What Does Success Mean Here?</h2>
+
+  <p>
+    In standard supervised learning, success is clear: loss goes down, accuracy goes up,
+    and a validation set gives an unambiguous score. Reinforcement learning is different.
+    There is no labeled dataset. The agent generates its own training data by interacting
+    with the environment, and the only signal it receives is a scalar reward number after
+    each action. Success is therefore defined entirely through the reward function.
+  </p>
+  <p>
+    For Humanoid-v4, success means the 17-joint bipedal humanoid figure moves forward
+    as fast as possible without falling over, for as long as possible within a 1000-step
+    episode limit. There is no binary pass/fail. Instead there is a continuous spectrum
+    from "falls immediately" (reward near zero) to "walks briskly and stably"
+    (reward 5,000 to 8,000 per episode at SOTA).
+  </p>
+
+  <div class="box def">
+    <span class="box-label">Formal definition of success</span>
+    <p>An agent is considered successful on Humanoid-v4 if it achieves a mean episodic
+    return above 3,000 across evaluation episodes. This threshold corresponds to sustained
+    forward locomotion. Rewards below 1,000 indicate the agent falls within the first
+    few seconds of each episode. The absolute ceiling for a fully walking agent under the
+    standard reward function is approximately 8,000&ndash;10,000 per episode at 1,000 steps.</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════
+     S2: REWARD SIGNAL
+═══════════════════════════════ -->
+<section id="s2">
+  <span class="sec-label">Section 2</span>
+  <h2>The Reward Signal in Detail</h2>
+
+  <h3 id="s2a">2.1 Reward Components</h3>
+  <p>
+    The reward at every step is a sum of several terms, some positive (encouraging good behavior)
+    and some negative (penalizing bad behavior). Understanding each term explains what the
+    agent is actually learning to optimize.
+  </p>
+
+  <div class="eq">
+    <span class="eq-label">Humanoid-v4 Per-Step Reward Function (Gymnasium Implementation)</span>
+    r(t) = <span class="highlight">r_forward</span>  +  <span class="highlight">r_survive</span>  -  <span class="highlight">r_ctrl</span>  -  <span class="highlight">r_contact</span>
+    <br><br>
+    where:
+    <br>
+    <span class="highlight">r_forward</span>  = forward_speed_coeff * dx/dt
+    <br>
+    <span class="note">              coefficient = 1.25, dx/dt = change in x-position per timestep (m/s)</span>
+    <br><br>
+    <span class="highlight">r_survive</span>  = 5.0
+    <br>
+    <span class="note">              constant added every step the agent has not fallen (z_torso > 1.0 m)</span>
+    <br><br>
+    <span class="highlight">r_ctrl</span>     = ctrl_cost_weight * sum(action^2)
+    <br>
+    <span class="note">              coefficient = 0.1, penalizes large actuator forces (sum over all 17 joints)</span>
+    <br><br>
+    <span class="highlight">r_contact</span>  = contact_cost_weight * sum(contact_forces^2)   [optional, often 0]
+    <br>
+    <span class="note">              coefficient = 5e-7, penalizes excessive ground contact forces</span>
+  </div>
+
+  <table>
+    <tr>
+      <th>Component</th>
+      <th>Typical range per step</th>
+      <th>Purpose</th>
+      <th>Effect on behavior</th>
+    </tr>
+    <tr>
+      <td class="mono">r_forward</td>
+      <td>0 to ~15</td>
+      <td>Incentivize forward motion</td>
+      <td>Agent learns to move in the x-direction. Zero when stationary, positive when walking forward.</td>
+    </tr>
+    <tr>
+      <td class="mono">r_survive</td>
+      <td>+5 always</td>
+      <td>Incentivize staying upright</td>
+      <td>The largest single signal early in training. Teaches the agent not to fall before it can walk. Over 1000 steps this alone contributes 5,000 to total episode reward.</td>
+    </tr>
+    <tr>
+      <td class="mono">-r_ctrl</td>
+      <td>-0.01 to -1.0</td>
+      <td>Penalize wasted energy</td>
+      <td>Prevents the agent from using maximum joint forces at all times. Encourages smooth, efficient gaits over jerky high-force motions.</td>
+    </tr>
+    <tr>
+      <td class="mono">-r_contact</td>
+      <td>near 0</td>
+      <td>Penalize impact forces</td>
+      <td>Usually negligible due to small coefficient. Mildly discourages hard landings.</td>
+    </tr>
+    <caption>Table 1. Reward components for Humanoid-v4. A perfect 1000-step episode with maximum speed and minimal energy use could theoretically reach approximately 10,000 total reward.</caption>
+  </table>
+
+  <div class="box warn">
+    <span class="box-label">Why the survival bonus dominates early training</span>
+    <p>At the start of training the agent knows nothing about walking and falls within 5-20 steps.
+    With r_survive = 5 per step, a policy that survives for 100 steps before falling earns 500 reward
+    purely from staying upright, regardless of forward motion. This is why early reward curves
+    show rapid growth (the agent is learning not to fall), followed by a slower plateau (learning to walk).
+    The survival bonus also explains why TD3/DDPG with a deterministic policy struggles: it collapses
+    to "lean and fall slowly forward" as a locally optimal survival strategy.</p>
+  </div>
+
+  <h3 id="s2b">2.2 Reward Normalization via VecNormalize</h3>
+  <p>
+    The raw reward is not fed directly to the critic. VecNormalize maintains a running estimate of
+    the reward mean and variance across all experienced steps and normalizes by the standard
+    deviation. This keeps reward values in a well-conditioned range for neural network training.
+  </p>
+  <div class="eq">
+    <span class="eq-label">VecNormalize Reward Processing</span>
+    r_normalized(t) = r(t) / sqrt(Var[R] + epsilon)
+    <br><br>
+    where Var[R] is the running variance of all rewards seen so far,
+    <br>epsilon = 1e-8 prevents division by zero.
+    <br><br>
+    With clip_reward = 10.0 (V4 fix):
+    <br>
+    r_stored = clip(r_normalized, -10, 10)
+    <br><br>
+    <span class="note">Observation normalization is separate:</span>
+    <br>
+    s_normalized = clip((s - mean_s) / sqrt(Var_s + eps), -5, 5)   [clip_obs=5 in V4]
+  </div>
+</section>
+
+<!-- ═══════════════════════════════
+     S3: INPUTS AND OUTPUTS
+═══════════════════════════════ -->
+<section id="s3">
+  <span class="sec-label">Section 3</span>
+  <h2>Inputs and Outputs of Every Component</h2>
+
+  <h3 id="s3a">3.1 The Observation Vector (Input to All Networks)</h3>
+  <p>
+    Every network in the system receives the same 376-dimensional observation vector as input.
+    This vector is a snapshot of the entire physical state of the humanoid at a given timestep,
+    structured as follows:
+  </p>
+
+  <table>
+    <tr>
+      <th>Indices</th>
+      <th>Dimension</th>
+      <th>Contents</th>
+      <th>Physical meaning</th>
+    </tr>
+    <tr>
+      <td class="mono">0</td>
+      <td>1</td>
+      <td>z_torso position</td>
+      <td>Height of the torso center of mass. Falls when this drops below ~1.0 m.</td>
+    </tr>
+    <tr>
+      <td class="mono">1:22</td>
+      <td>22</td>
+      <td>Joint angles (qpos)</td>
+      <td>Angular position of each of the 21 joints (hips, knees, ankles, shoulders, etc.), in radians.</td>
+    </tr>
+    <tr>
+      <td class="mono">22:45</td>
+      <td>23</td>
+      <td>Joint velocities (qvel)</td>
+      <td>Angular velocity of each joint in rad/s. Excludes x,y global position velocities.</td>
+    </tr>
+    <tr>
+      <td class="mono">45:269</td>
+      <td>224</td>
+      <td>Contact forces (cfrc_ext)</td>
+      <td>External contact forces applied to each of the 14 body segments (x, y, z force and torque for each = 6*14 = 84... expanded with additional bodies to 224). This is the dominant portion of the observation.</td>
+    </tr>
+    <tr>
+      <td class="mono">269:376</td>
+      <td>107</td>
+      <td>Actuator states, cinematic features</td>
+      <td>Actuator forces, center-of-inertia positions and velocities, and other kinematic features computed from the full MuJoCo model state.</td>
+    </tr>
+    <caption>Table 2. Humanoid-v4 observation vector decomposition (total: 376 float32 values). After VecNormalize, each element has approximately zero mean and unit variance, clipped to [-5, 5].</caption>
+  </table>
+
+  <h3 id="s3b">3.2 The Action Vector (Output of the Actor)</h3>
+  <p>
+    The action vector is 17-dimensional, one scalar per actuated joint. Each value is bounded
+    to [-1, 1] by a tanh nonlinearity in the actor output layer. The environment scales
+    these to the physical torque range of each joint.
+  </p>
+  <table>
+    <tr><th>Joint</th><th>Action index</th><th>Controls</th></tr>
+    <tr><td class="mono">abdomen_y</td><td class="mono">0</td><td>Abdominal bend (forward/backward)</td></tr>
+    <tr><td class="mono">abdomen_z</td><td class="mono">1</td><td>Abdominal twist (rotation)</td></tr>
+    <tr><td class="mono">abdomen_x</td><td class="mono">2</td><td>Abdominal side-bend</td></tr>
+    <tr><td class="mono">right_hip_x/y/z</td><td class="mono">3,4,5</td><td>Right hip 3-axis rotation</td></tr>
+    <tr><td class="mono">right_knee</td><td class="mono">6</td><td>Right knee flexion</td></tr>
+    <tr><td class="mono">left_hip_x/y/z</td><td class="mono">7,8,9</td><td>Left hip 3-axis rotation</td></tr>
+    <tr><td class="mono">left_knee</td><td class="mono">10</td><td>Left knee flexion</td></tr>
+    <tr><td class="mono">right_shoulder1/2</td><td class="mono">11,12</td><td>Right shoulder 2-axis</td></tr>
+    <tr><td class="mono">right_elbow</td><td class="mono">13</td><td>Right elbow flexion</td></tr>
+    <tr><td class="mono">left_shoulder1/2</td><td class="mono">14,15</td><td>Left shoulder 2-axis</td></tr>
+    <tr><td class="mono">left_elbow</td><td class="mono">16</td><td>Left elbow flexion</td></tr>
+    <caption>Table 3. Humanoid-v4 action space (17-dimensional). Each value in [-1, 1] after tanh. MuJoCo scales by the joint's gear ratio to produce physical torques.</caption>
+  </table>
+
+  <h3 id="s3c">3.3 Input and Output of Each Network Component</h3>
+
+  <h4>Stochastic Actor (SAC / CrossQ)</h4>
+  <pre>
+Input:   s_normalized  shape: (batch, 376)   float32
+                        each element in [-5, 5] after VecNormalize
+
+Hidden:  layer1  Linear(376 -> 512)          shape: (batch, 512)
+         ReLU
+         layer2  Linear(512 -> 512)          shape: (batch, 512)
+         ReLU
+
+Output heads (two parallel Linear layers):
+         mu       Linear(512 -> 17)          shape: (batch, 17)   [mean of Gaussian]
+         log_std  Linear(512 -> 17)          shape: (batch, 17)   clamped to [-20, 2]
+
+Derived outputs (used at different points in the loop):
+         std    = exp(log_std)               shape: (batch, 17)
+         z      ~ N(mu, std^2)              shape: (batch, 17)   [reparameterization sample]
+         action = tanh(z)                   shape: (batch, 17)   [bounded to (-1, 1)]
+
+         log_prob = sum_dim(                shape: (batch,)
+                     Normal(z; mu, std).log_prob(z)
+                   - log(1 - tanh(z)^2 + 1e-6)
+                   )
+         <span class="comment">The second term corrects for the change-of-variables from z to tanh(z).</span>
+  </pre>
+
+  <h4>Critic Q-Network (SAC: two copies; CrossQ: two copies with BatchNorm)</h4>
+  <pre>
+Input:   [s_normalized, action]  shape: (batch, 376 + 17) = (batch, 393)   float32
+
+SAC critic (V4):
+         Linear(393 -> 512), ReLU
+         Linear(512 -> 512), ReLU
+         Linear(512 -> 1)
+
+CrossQ critic (SOTA):
+         Linear(393 -> 1024)
+         BatchNorm1d(1024)            <span class="comment"># normalizes each feature across the mini-batch</span>
+         ReLU
+         Linear(1024 -> 1024)
+         BatchNorm1d(1024)
+         ReLU
+         Linear(1024 -> 1)
+
+Output:  Q(s, a)   shape: (batch, 1)   scalar Q-value per (state, action) pair
+         <span class="comment">Interpretation: expected sum of discounted future rewards when taking action</span>
+         <span class="comment">a in state s and then following the current policy.</span>
+
+Two critics are run in parallel: Q1(s,a) and Q2(s,a).
+The minimum is used in the actor loss and the Bellman target.
+  </pre>
+
+  <div class="box key">
+    <span class="box-label">What does the Q-value represent physically?</span>
+    <p>If the critic outputs Q(s, a) = 450 for a particular (observation, action) pair, it means
+    the network predicts that taking that joint torque command in that body state will lead to
+    an expected cumulative discounted reward of 450 from that point forward. A high Q-value
+    for a state-action pair means the actor should be more likely to choose that action in
+    that state. The actor loss uses this signal to push the policy toward higher-Q actions.</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════
+     S4: LOSS FUNCTIONS
+═══════════════════════════════ -->
+<section id="s4">
+  <span class="sec-label">Section 4</span>
+  <h2>Loss Functions: What Each One Optimizes and Why</h2>
+
+  <p>
+    There are three separate loss functions computed and optimized on every training step,
+    each with its own optimizer and its own network parameters. They do not share gradients.
+  </p>
+
+  <h3 id="s4a">4.1 Critic Loss: Teaching the Value Function</h3>
+  <p>
+    The critic loss is a mean-squared Bellman error. It asks: given what we believe the future
+    will look like (the Bellman target), how far off is our current Q-estimate? The critic is
+    trained to be accurate, not to be large or small. Accuracy means correctly predicting
+    the expected discounted return.
+  </p>
+
+  <div class="eq">
+    <span class="eq-label">SAC Critic Loss (Temporal Difference Error)</span>
+
+    Step 1 -- Compute Bellman target y (using a fresh action from the actor):
+    <br>
+        a'  ~ pi(. | s')                             <span class="note"># sample next action from CURRENT policy</span>
+    <br>
+        y   = r  +  gamma * ( min(Q1'(s', a'), Q2'(s', a'))  -  alpha * log pi(a' | s') )
+    <br>
+        <span class="note">     = reward  +  discounted future value  -  entropy correction</span>
+    <br><br>
+    Step 2 -- Compute loss for Q1 and Q2 separately:
+    <br>
+        L_Q1 = E_B [ ( Q1(s, a)  -  y )^2 ]         <span class="note"># mean squared error over mini-batch B</span>
+    <br>
+        L_Q2 = E_B [ ( Q2(s, a)  -  y )^2 ]
+    <br><br>
+    Step 3 -- Update critic parameters:
+    <br>
+        theta_Q1  &lt;-  theta_Q1  -  lr * grad_Q1(L_Q1)
+    <br>
+        theta_Q2  &lt;-  theta_Q2  -  lr * grad_Q2(L_Q2)
+    <br><br>
+    <span class="note">gamma = 0.99 (discount factor: future rewards worth slightly less than immediate ones)</span>
+    <br>
+    <span class="note">Q1', Q2' = target network copies in SAC; Q1, Q2 directly in CrossQ</span>
+  </div>
+
+  <p>
+    The entropy correction term <code>-alpha * log pi(a'|s')</code> in the Bellman target is
+    the key innovation of SAC versus TD3. It tells the critic to assign higher value to states
+    where the policy has high entropy (many viable actions), not just high expected reward.
+    This propagates the exploration incentive backwards through the value function.
+  </p>
+
+  <div class="box def">
+    <span class="box-label">Why min(Q1, Q2) instead of a single Q-network?</span>
+    <p>Using a single critic causes systematic overestimation bias: the critic learns to
+    produce higher-than-true Q-values because this gets rewarded by the actor (which uses
+    high Q-values to guide action selection). The minimum operator across two independent
+    critics acts as a pessimistic correction. It is biased downward, which prevents the
+    actor from exploiting inflated Q-value estimates. This "clipped double Q" trick was
+    introduced by Fujimoto et al. (2018) and is retained in SAC and CrossQ.</p>
+  </div>
+
+  <h3 id="s4b">4.2 Actor Loss: Teaching the Policy</h3>
+  <p>
+    The actor is not trained to maximize reward directly. It is trained to choose actions
+    that the critic predicts will lead to high Q-values, while also maintaining high entropy.
+    The actor loss is therefore the negative of the soft Q-value (we minimize, so negative
+    of what we want to maximize).
+  </p>
+
+  <div class="eq">
+    <span class="eq-label">SAC Actor Loss (Soft Policy Gradient)</span>
+
+    Sample fresh actions from the current actor (using reparameterization):
+    <br>
+        a_new, log_pi  =  actor(s)              <span class="note"># differentiable through tanh(N(mu, std))</span>
+    <br><br>
+    Compute soft Q-value of the new action:
+    <br>
+        Q_soft  =  min(Q1(s, a_new), Q2(s, a_new))  -  alpha * log_pi
+    <br><br>
+    Actor loss (minimize negative expected soft Q-value):
+    <br>
+        L_actor  =  E_B [ alpha * log_pi  -  min(Q1(s, a_new), Q2(s, a_new)) ]
+    <br>
+               =  E_B [ -Q_soft ]
+    <br><br>
+    Update actor parameters:
+    <br>
+        theta_pi  &lt;-  theta_pi  -  lr * grad_pi(L_actor)
+    <br><br>
+    <span class="note">Note: the actions a_new are freshly sampled here, NOT the stored (s, a) from the buffer.</span>
+    <br>
+    <span class="note">The reparameterization trick (a = tanh(mu + std * epsilon)) allows grad to flow</span>
+    <br>
+    <span class="note">from L_actor back through a_new into theta_pi.</span>
+  </div>
+
+  <p>
+    The tension in the actor loss is between two terms. The term <code>-min(Q1, Q2)</code>
+    pushes the actor toward higher-value actions (exploitation). The term <code>alpha * log_pi</code>
+    pushes the actor toward higher-entropy actions (exploration). Alpha controls the balance.
+    When alpha is large, exploration dominates. When alpha is near zero, the loss degenerates
+    to pure policy gradient on the Q-value, which is approximately equivalent to TD3.
+  </p>
+
+  <h3 id="s4c">4.3 Entropy Coefficient Loss: Automatic Alpha Tuning</h3>
+  <p>
+    Alpha is not fixed. SAC automatically adjusts it during training so that the actual
+    entropy of the policy stays near a target level. Too much entropy wastes reward;
+    too little prevents exploration. The target entropy H_target = -dim(A) = -17 is a
+    heuristic that works well across many continuous control tasks.
+  </p>
+
+  <div class="eq">
+    <span class="eq-label">Entropy Coefficient (Alpha) Loss</span>
+
+    L_alpha  =  E_B [ -alpha * ( log_pi(a | s)  +  H_target ) ]
+    <br><br>
+    where H_target  =  -dim(A)  =  -17
+    <br><br>
+    Update alpha:
+    <br>
+        log_alpha  &lt;-  log_alpha  -  lr_alpha * grad(L_alpha)
+    <br>
+        alpha      =  exp(log_alpha)   [ensures alpha > 0]
+    <br><br>
+    <span class="note">Intuition:</span>
+    <br>
+    <span class="note">If current entropy (-log_pi) > H_target: L_alpha is negative, gradient reduces alpha</span>
+    <br>
+    <span class="note">                                          (agent already exploring enough, reduce bonus)</span>
+    <br>
+    <span class="note">If current entropy (-log_pi) < H_target: L_alpha is positive, gradient increases alpha</span>
+    <br>
+    <span class="note">                                          (agent too deterministic, increase bonus)</span>
+  </div>
+
+  <h3 id="s4d">4.4 CrossQ Differences in Loss Computation</h3>
+  <p>
+    CrossQ uses the same three loss functions as SAC with one key difference in the
+    critic loss: target networks are absent. The Bellman target uses the same Q1 and Q2
+    networks that are being trained, rather than frozen copies.
+  </p>
+
+  <div class="eq">
+    <span class="eq-label">CrossQ Critic Loss (No Target Networks)</span>
+
+    SAC target (uses frozen copies Q1', Q2'):
+    <br>
+        y_SAC  =  r  +  gamma * ( min(Q1'(s',a'), Q2'(s',a'))  -  alpha * log pi(a'|s') )
+    <br><br>
+    CrossQ target (uses live networks Q1, Q2 directly):
+    <br>
+        y_CrossQ  =  r  +  gamma * ( min(Q1(s',a'), Q2(s',a'))  -  alpha * log pi(a'|s') )
+    <br><br>
+    <span class="note">This would normally cause catastrophic instability (bootstrapping from self).</span>
+    <br>
+    <span class="note">BatchNorm prevents this by bounding the rate of change of the Q-function:</span>
+    <br>
+    <span class="note">  ||Q(s,a; theta_t+1) - Q(s,a; theta_t)||_inf  &lt;  C / sqrt(batch_size)</span>
+    <br>
+    <span class="note">where C depends only on the BatchNorm scale parameter, not on the gradient magnitude.</span>
+    <br><br>
+    Additionally, CrossQ interleaves current and next-state observations in the same
+    <br>
+    mini-batch so that BatchNorm statistics are shared across (s,a) and (s',a'), which
+    <br>
+    prevents the batch statistics from differing between the two evaluation contexts.
+  </div>
+
+  <table>
+    <tr>
+      <th>Loss</th>
+      <th>Parameters updated</th>
+      <th>Minimizing this does</th>
+      <th>Frequency</th>
+    </tr>
+    <tr>
+      <td class="mono">L_Q1, L_Q2</td>
+      <td>Critic 1, Critic 2</td>
+      <td>Makes Q-values accurate predictors of discounted return. Better critic = better actor gradient signal.</td>
+      <td>Every gradient step</td>
+    </tr>
+    <tr>
+      <td class="mono">L_actor</td>
+      <td>Actor only</td>
+      <td>Moves the policy toward actions the critic says are high value, while maintaining entropy.</td>
+      <td>Every gradient step</td>
+    </tr>
+    <tr>
+      <td class="mono">L_alpha</td>
+      <td>log_alpha (scalar)</td>
+      <td>Keeps policy entropy near H_target = -17. Prevents collapse to determinism or excessive randomness.</td>
+      <td>Every gradient step</td>
+    </tr>
+    <caption>Table 4. Three separate optimizers run in sequence each gradient step. In SAC the target networks are also soft-updated after critics are updated.</caption>
+  </table>
+</section>
+
+<!-- ═══════════════════════════════
+     S5: TRAINING LOOP
+═══════════════════════════════ -->
+<section id="s5">
+  <span class="sec-label">Section 5</span>
+  <h2>The Complete Training Loop</h2>
+
+  <h3 id="s5a">5.1 The Loop Explained Step by Step</h3>
+
+  <p>
+    The training loop alternates between two phases: <strong>data collection</strong>
+    (the agent acts in the environment and stores experiences) and <strong>learning</strong>
+    (the networks are updated from stored experiences). These two phases are interleaved
+    at every timestep after warmup. The replay buffer is the bridge between them.
+  </p>
+
+  <!-- TRAINING LOOP DIAGRAM -->
+  <div class="diagram">
+    <svg viewBox="0 0 800 520" width="760" xmlns="http://www.w3.org/2000/svg" style="font-family:'IBM Plex Mono',monospace;">
+      <defs>
+        <marker id="arr" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+          <path d="M0,0 L9,3.5 L0,7 Z" fill="#3a3a3c"/>
+        </marker>
+        <marker id="arr-b" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+          <path d="M0,0 L9,3.5 L0,7 Z" fill="#1d3a6e"/>
+        </marker>
+        <marker id="arr-g" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+          <path d="M0,0 L9,3.5 L0,7 Z" fill="#1a4a28"/>
+        </marker>
+        <marker id="arr-r" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+          <path d="M0,0 L9,3.5 L0,7 Z" fill="#6b4700"/>
+        </marker>
+      </defs>
+
+      <!-- LEFT COLUMN: ENVIRONMENT SIDE -->
+
+      <!-- ENV BOX -->
+      <rect x="20" y="30" width="160" height="80" fill="#f5f5f0" stroke="#c8c4b4" stroke-width="1.2"/>
+      <text x="100" y="62" text-anchor="middle" font-size="10" font-weight="600" fill="#1c1c1e">ENVIRONMENT</text>
+      <text x="100" y="79" text-anchor="middle" font-size="8.5" fill="#636366">MuJoCo Humanoid-v4</text>
+      <text x="100" y="95" text-anchor="middle" font-size="8" fill="#aeaeb2">1000 steps / episode</text>
+
+      <!-- ACTOR BOX -->
+      <rect x="20" y="160" width="160" height="80" fill="#eef1f8" stroke="#4a6fa5" stroke-width="1.2"/>
+      <text x="100" y="192" text-anchor="middle" font-size="10" font-weight="600" fill="#1d3a6e">ACTOR</text>
+      <text x="100" y="208" text-anchor="middle" font-size="8.5" fill="#4a6fa5">pi(a|s): s -> (mu, logstd)</text>
+      <text x="100" y="224" text-anchor="middle" font-size="8.5" fill="#4a6fa5">a = tanh(N(mu, std))</text>
+
+      <!-- REPLAY BUFFER -->
+      <rect x="20" y="310" width="160" height="80" fill="#f5f5f0" stroke="#c8c4b4" stroke-width="1.2"/>
+      <text x="100" y="342" text-anchor="middle" font-size="10" font-weight="600" fill="#1c1c1e">REPLAY BUFFER</text>
+      <text x="100" y="358" text-anchor="middle" font-size="8.5" fill="#636366">stores (s, a, r, s', done)</text>
+      <text x="100" y="374" text-anchor="middle" font-size="8.5" fill="#aeaeb2">capacity: 500,000</text>
+
+      <!-- VecNormalize -->
+      <rect x="20" y="430" width="160" height="60" fill="#f5f5f0" stroke="#c8c4b4" stroke-width="1"/>
+      <text x="100" y="456" text-anchor="middle" font-size="9" font-weight="600" fill="#1c1c1e">VecNormalize</text>
+      <text x="100" y="472" text-anchor="middle" font-size="8" fill="#636366">online mean/std for s and r</text>
+
+      <!-- RIGHT COLUMN: LEARNING SIDE -->
+
+      <!-- CRITIC 1 -->
+      <rect x="560" y="60" width="215" height="75" fill="#edf5f0" stroke="#1a4a28" stroke-width="1.2"/>
+      <text x="667" y="84" text-anchor="middle" font-size="10" font-weight="600" fill="#1a4a28">CRITIC Q1 + Q2</text>
+      <text x="667" y="101" text-anchor="middle" font-size="8.5" fill="#3a7a48">Input: [s, a] shape (393,)</text>
+      <text x="667" y="117" text-anchor="middle" font-size="8.5" fill="#3a7a48">Output: Q(s,a) scalar</text>
+
+      <!-- BELLMAN TARGET -->
+      <rect x="560" y="175" width="215" height="100" fill="#fdf6e8" stroke="#b06000" stroke-width="1.2"/>
+      <text x="667" y="198" text-anchor="middle" font-size="10" font-weight="600" fill="#6b4700">BELLMAN TARGET y</text>
+      <text x="667" y="217" text-anchor="middle" font-size="8.5" fill="#8a5500">y = r + 0.99 *</text>
+      <text x="667" y="233" text-anchor="middle" font-size="8.5" fill="#8a5500">( min(Q1(s',a'), Q2(s',a'))</text>
+      <text x="667" y="249" text-anchor="middle" font-size="8.5" fill="#8a5500"> - alpha * log pi(a'|s') )</text>
+      <text x="667" y="265" text-anchor="middle" font-size="8" fill="#aeaeb2">a' freshly sampled from actor</text>
+
+      <!-- CRITIC LOSS -->
+      <rect x="560" y="310" width="215" height="60" fill="#faf0f0" stroke="#7a1e1e" stroke-width="1.2"/>
+      <text x="667" y="334" text-anchor="middle" font-size="10" font-weight="600" fill="#7a1e1e">CRITIC LOSS L_Q</text>
+      <text x="667" y="352" text-anchor="middle" font-size="8.5" fill="#a03030">E[(Q(s,a) - y)^2]</text>
+
+      <!-- ACTOR LOSS -->
+      <rect x="560" y="395" width="215" height="65" fill="#eef1f8" stroke="#1d3a6e" stroke-width="1.2"/>
+      <text x="667" y="419" text-anchor="middle" font-size="10" font-weight="600" fill="#1d3a6e">ACTOR LOSS L_pi</text>
+      <text x="667" y="436" text-anchor="middle" font-size="8.5" fill="#3a5a8e">E[alpha*log_pi - min(Q1,Q2)]</text>
+      <text x="667" y="452" text-anchor="middle" font-size="8.5" fill="#3a5a8e">of freshly-sampled actions</text>
+
+      <!-- MINI-BATCH SAMPLER -->
+      <rect x="265" y="310" width="200" height="80" fill="#f5f5f0" stroke="#c8c4b4" stroke-width="1.2"/>
+      <text x="365" y="340" text-anchor="middle" font-size="10" font-weight="600" fill="#1c1c1e">SAMPLE MINI-BATCH</text>
+      <text x="365" y="357" text-anchor="middle" font-size="8.5" fill="#636366">256 random transitions</text>
+      <text x="365" y="373" text-anchor="middle" font-size="8.5" fill="#636366">from replay buffer</text>
+
+      <!-- SOFT UPDATE -->
+      <rect x="265" y="440" width="200" height="60" fill="#f5f5f0" stroke="#c8c4b4" stroke-width="1.2"/>
+      <text x="365" y="466" text-anchor="middle" font-size="9" font-weight="600" fill="#1c1c1e">SOFT UPDATE (SAC only)</text>
+      <text x="365" y="481" text-anchor="middle" font-size="8" fill="#636366">theta' &lt;- 0.005*theta + 0.995*theta'</text>
+
+      <!-- ── ARROWS: DATA COLLECTION PHASE ── -->
+      <!-- env -> observation -> actor -->
+      <line x1="100" y1="110" x2="100" y2="158" stroke="#3a3a3c" stroke-width="1.3" marker-end="url(#arr)"/>
+      <text x="108" y="140" font-size="8" fill="#636366">s (obs)</text>
+
+      <!-- actor -> env (action) -->
+      <path d="M 160 195 Q 210 195 210 95 L 182 95" fill="none" stroke="#1d3a6e" stroke-width="1.3" marker-end="url(#arr-b)"/>
+      <text x="188" y="152" font-size="8" fill="#4a6fa5">a (action)</text>
+
+      <!-- env -> buffer (s, a, r, s', done) -->
+      <path d="M 180 75 Q 230 75 230 350 L 182 350" fill="none" stroke="#3a3a3c" stroke-width="1" stroke-dasharray="4,2"/>
+      <text x="235" y="220" font-size="8" fill="#636366">(s,a,r,s',done)</text>
+
+      <!-- actor -> buffer (action logged) -->
+      <line x1="100" y1="240" x2="100" y2="308" stroke="#3a3a3c" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arr)"/>
+
+      <!-- vecnorm -> actor -->
+      <path d="M 180 460 Q 245 460 245 200 L 182 200" fill="none" stroke="#3a3a3c" stroke-width="1" stroke-dasharray="3,2"/>
+      <text x="198" y="400" font-size="7.5" fill="#aeaeb2">normalized s</text>
+
+      <!-- ── ARROWS: LEARNING PHASE ── -->
+      <!-- buffer -> mini-batch sampler -->
+      <line x1="180" y1="350" x2="263" y2="350" stroke="#1a4a28" stroke-width="1.3" marker-end="url(#arr-g)"/>
+
+      <!-- mini-batch -> critic -->
+      <path d="M 465 330 Q 530 330 530 100 L 558 100" fill="none" stroke="#1a4a28" stroke-width="1.3" marker-end="url(#arr-g)"/>
+      <text x="480" y="310" font-size="7.5" fill="#1a4a28">(s,a,r,s')</text>
+
+      <!-- critic -> bellman target -->
+      <line x1="667" y1="135" x2="667" y2="173" stroke="#6b4700" stroke-width="1.3" marker-end="url(#arr-r)"/>
+
+      <!-- bellman -> critic loss -->
+      <line x1="667" y1="275" x2="667" y2="308" stroke="#7a1e1e" stroke-width="1.3" marker-end="url(#arr)"/>
+
+      <!-- critic loss -> actor loss (critic params updated, then actor reads critic) -->
+      <line x1="667" y1="370" x2="667" y2="393" stroke="#1d3a6e" stroke-width="1.3" marker-end="url(#arr-b)"/>
+      <text x="672" y="386" font-size="7.5" fill="#636366">critic updated first</text>
+
+      <!-- actor loss -> back to actor (gradient) -->
+      <path d="M 560 430 Q 500 430 500 200 L 182 200" fill="none" stroke="#1d3a6e" stroke-width="1.3" stroke-dasharray="4,2" marker-end="url(#arr-b)"/>
+      <text x="490" y="360" font-size="7.5" fill="#4a6fa5">grad -> update actor</text>
+
+      <!-- critic loss -> soft update -->
+      <path d="M 667 370 Q 667 490 467 490 L 467 502" fill="none" stroke="#3a3a3c" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arr)"/>
+      <text x="540" y="498" font-size="7.5" fill="#aeaeb2">after critic update</text>
+
+      <!-- PHASE LABELS -->
+      <text x="30" y="22" font-size="8.5" font-weight="600" fill="#636366">DATA COLLECTION PHASE</text>
+      <text x="560" y="52" font-size="8.5" font-weight="600" fill="#636366">LEARNING PHASE (gradient_steps=1 or 4)</text>
+
+      <!-- STEP NUMBERS -->
+      <circle cx="100" cy="135" r="9" fill="#1d3a6e"/>
+      <text x="100" y="139" text-anchor="middle" font-size="8" font-weight="600" fill="#fff">1</text>
+      <circle cx="180" cy="195" r="9" fill="#1d3a6e"/>
+      <text x="180" y="199" text-anchor="middle" font-size="8" font-weight="600" fill="#fff">2</text>
+      <circle cx="180" cy="75" r="9" fill="#3a3a3c"/>
+      <text x="180" y="79" text-anchor="middle" font-size="8" font-weight="600" fill="#fff">3</text>
+      <circle cx="265" cy="350" r="9" fill="#1a4a28"/>
+      <text x="265" y="354" text-anchor="middle" font-size="8" font-weight="600" fill="#fff">4</text>
+      <circle cx="559" cy="100" r="9" fill="#1a4a28"/>
+      <text x="559" y="104" text-anchor="middle" font-size="8" font-weight="600" fill="#fff">5</text>
+      <circle cx="667" cy="165" r="9" fill="#6b4700"/>
+      <text x="667" y="169" text-anchor="middle" font-size="8" font-weight="600" fill="#fff">6</text>
+      <circle cx="667" cy="301" r="9" fill="#7a1e1e"/>
+      <text x="667" y="305" text-anchor="middle" font-size="8" font-weight="600" fill="#fff">7</text>
+      <circle cx="667" cy="387" r="9" fill="#1d3a6e"/>
+      <text x="667" y="391" text-anchor="middle" font-size="8" font-weight="600" fill="#fff">8</text>
+    </svg>
+    <figcaption>Figure 1. Complete SAC/CrossQ training loop. Solid arrows: forward pass. Dashed arrows: gradient flow or indexing. Numbered circles indicate execution order each timestep after warmup.</figcaption>
+  </div>
+
+  <h3 id="s5b">5.2 Pseudocode of the Full Training Loop</h3>
+
+  <pre>
+<span class="comment">########################################################</span>
+<span class="comment">## SAC / CrossQ Training Loop (conceptual pseudocode)</span>
+<span class="comment">########################################################</span>
+
+<span class="kw">initialize</span>:
+    actor   phi        [Linear(376,512), ReLU, Linear(512,512), ReLU, two heads]
+    critic1 theta1     [Linear(393,512), BN?, ReLU, Linear(512,512), BN?, ReLU, Linear(512,1)]
+    critic2 theta2     [same structure as critic1, independent weights]
+    target_critic1 theta1'  &lt;-  theta1    [SAC only; CrossQ skips]
+    target_critic2 theta2'  &lt;-  theta2    [SAC only; CrossQ skips]
+    log_alpha  &lt;- 0.0 (alpha = exp(log_alpha) = 1.0 initially)
+    replay_buffer B, capacity 500,000
+    H_target  =  -17
+
+<span class="comment">## Collect initial random transitions (warmup)</span>
+<span class="kw">for</span> t = 1 <span class="kw">to</span> learning_starts (10,000):
+    a  =  env.action_space.sample()       <span class="comment"># random action, no actor</span>
+    s', r, done, info  =  env.step(a)
+    B.add(s, a, r, s', done)
+    s  &lt;-  s'  (reset if done)
+
+<span class="comment">## Main training loop</span>
+<span class="kw">for</span> t = learning_starts <span class="kw">to</span> total_timesteps (1,000,000):
+
+    <span class="label">--- STEP 1: OBSERVE AND ACT ---</span>
+    s_norm  =  VecNormalize(s)
+    mu, log_std  =  actor(s_norm; phi)
+    std  =  exp(log_std).clamp(-20, 2)
+    z    ~  Normal(mu, std)
+    a    =  tanh(z)                        <span class="comment"># action sent to environment</span>
+
+    <span class="label">--- STEP 2: ENVIRONMENT STEP ---</span>
+    s', r_raw, done, info  =  env.step(a)
+    r_norm  =  VecNormalize.normalize_reward(r_raw)
+    B.add(s_norm, a, r_norm, VecNormalize(s'), done)
+    s  &lt;-  s'  (reset if done)
+
+    <span class="label">--- STEP 3: LEARNING (repeat gradient_steps times) ---</span>
+    <span class="kw">for</span> g = 1 <span class="kw">to</span> gradient_steps:
+
+        <span class="comment"># Sample mini-batch of 256 transitions</span>
+        {s_i, a_i, r_i, s'_i, done_i}  ~  B.sample(batch_size=256)
+
+        <span class="comment"># Compute Bellman target y</span>
+        a'_i, log_pi_i  =  actor(s'_i; phi)   <span class="comment"># fresh sample from current policy</span>
+        Q1_next  =  Q1(s'_i, a'_i; <span class="kw">theta1'</span>)  <span class="comment"># target nets (SAC) or theta1 (CrossQ)</span>
+        Q2_next  =  Q2(s'_i, a'_i; <span class="kw">theta2'</span>)
+        y_i  =  r_i  +  (1 - done_i) * gamma * (min(Q1_next, Q2_next) - alpha * log_pi_i)
+
+        <span class="comment"># Update Critic 1</span>
+        L_Q1  =  mean( (Q1(s_i, a_i; theta1) - y_i.detach())^2 )
+        theta1  &lt;-  theta1  -  lr * clip_grad(grad_theta1(L_Q1), max_norm=10)
+
+        <span class="comment"># Update Critic 2 (independently)</span>
+        L_Q2  =  mean( (Q2(s_i, a_i; theta2) - y_i.detach())^2 )
+        theta2  &lt;-  theta2  -  lr * clip_grad(grad_theta2(L_Q2), max_norm=10)
+
+        <span class="comment"># Update Actor</span>
+        a_new_i, log_pi_new_i  =  actor(s_i; phi)  <span class="comment"># sample fresh (not from buffer)</span>
+        Q1_val  =  Q1(s_i, a_new_i; theta1)
+        Q2_val  =  Q2(s_i, a_new_i; theta2)
+        L_actor  =  mean(alpha * log_pi_new_i  -  min(Q1_val, Q2_val))
+        phi  &lt;-  phi  -  lr * clip_grad(grad_phi(L_actor), max_norm=10)
+
+        <span class="comment"># Update Alpha</span>
+        L_alpha  =  mean(-log_alpha * (log_pi_new_i + H_target).detach())
+        log_alpha  &lt;-  log_alpha  -  lr_alpha * grad(L_alpha)
+        alpha  =  exp(log_alpha)
+
+        <span class="comment"># Soft update target networks (SAC only -- CrossQ skips)</span>
+        theta1'  &lt;-  0.005 * theta1  +  0.995 * theta1'
+        theta2'  &lt;-  0.005 * theta2  +  0.995 * theta2'
+  </pre>
+
+  <h3 id="s5c">5.3 Update Order and Why It Matters</h3>
+
+  <p>
+    The order in which the three optimizers are applied within each gradient step is not
+    arbitrary. The critic must be updated before the actor, because the actor loss depends
+    on the critic's Q-values. If the actor were updated first using a stale critic, the
+    gradient signal would be based on the wrong Q-function.
+  </p>
+
+  <table>
+    <tr>
+      <th>Order</th>
+      <th>Update</th>
+      <th>Why this position</th>
+    </tr>
+    <tr>
+      <td class="mono">1st</td>
+      <td>Critic Q1 and Q2</td>
+      <td>Must happen first. Bellman target y is computed with the current actor, then critic weights are updated to minimize MSE against y. The actor gradient needs an up-to-date critic.</td>
+    </tr>
+    <tr>
+      <td class="mono">2nd</td>
+      <td>Actor pi</td>
+      <td>After critics are updated. The actor gradient is: for each state in the batch, sample a fresh action, evaluate it with the updated critics, and push the policy toward higher-Q actions. Fresh samples (not buffer actions) ensure the reparameterization gradient is valid.</td>
+    </tr>
+    <tr>
+      <td class="mono">3rd</td>
+      <td>Alpha (log_alpha)</td>
+      <td>After the actor. The alpha update uses log_pi values computed from the current actor. These are the same log_pi values computed during the actor update step, so no additional forward pass is needed.</td>
+    </tr>
+    <tr>
+      <td class="mono">4th</td>
+      <td>Soft update of target nets (SAC only)</td>
+      <td>After critics are updated. The target networks must lag behind, so they are updated last, pulling theta' slightly toward the freshly updated theta.</td>
+    </tr>
+    <caption>Table 5. Update order within a single gradient step. In CrossQ, step 4 is omitted because there are no target networks.</caption>
+  </table>
+</section>
+
+<!-- ═══════════════════════════════
+     S6: SUCCESS METRICS
+═══════════════════════════════ -->
+<section id="s6">
+  <span class="sec-label">Section 6</span>
+  <h2>How Success Is Actually Measured in Practice</h2>
+
+  <p>
+    The notebook's <code>MetricsCallback</code> tracks several metrics during training.
+    Understanding what each one tells you about training progress is essential for
+    diagnosing whether the agent is learning, stagnating, or diverging.
+  </p>
+
+  <table>
+    <tr>
+      <th>Metric</th>
+      <th>How computed</th>
+      <th>What it tells you</th>
+      <th>Healthy values at 1M steps</th>
+    </tr>
+    <tr>
+      <td class="mono">mean_reward</td>
+      <td>Rolling mean of episode returns over last 100 episodes. Episode return = sum of raw (unnormalized) per-step rewards.</td>
+      <td>The primary success metric. Rising mean_reward = the agent is learning to walk better. Plateau = stuck in local optimum. Collapse = divergence.</td>
+      <td>SAC: 2,000-5,000. CrossQ: 5,000-6,500.</td>
+    </tr>
+    <tr>
+      <td class="mono">ep_length</td>
+      <td>Mean number of timesteps before episode ends (fall or 1000-step limit).</td>
+      <td>An agent that falls immediately has ep_length ~ 5-30. An agent that survives the full episode has ep_length = 1000. Rising ep_length before rising reward indicates the agent is learning not to fall before it learns to walk.</td>
+      <td>Should be near 1000 once walking is acquired.</td>
+    </tr>
+    <tr>
+      <td class="mono">critic_loss</td>
+      <td>Value of L_Q1 (or L_Q2) averaged over the batch. Computed and logged at each gradient step.</td>
+      <td>Should decrease then stabilize. Critic loss that grows monotonically or spikes to large values (e.g. 100+) indicates Q-value divergence. This is the primary indicator of the crashes that affected V3.</td>
+      <td>Typically 0.5 - 10 range. Stable or slowly decreasing.</td>
+    </tr>
+    <tr>
+      <td class="mono">actor_loss</td>
+      <td>Value of L_actor averaged over the batch.</td>
+      <td>In SAC the actor loss is typically negative (since the actor maximizes soft Q-values which grow positive). Becoming more negative over time = actor finding better actions. If actor_loss grows very large positively, the entropy term is dominating, suggesting alpha is too large.</td>
+      <td>Typically negative and slowly decreasing (more negative).</td>
+    </tr>
+    <tr>
+      <td class="mono">mean_q1</td>
+      <td>Mean Q1(s, a) value over the sampled mini-batch at each logging step.</td>
+      <td>Should grow as the policy improves. Stagnant Q-values with improving reward = critic is underestimating. Rapidly growing Q-values with no reward improvement = overestimation bias or divergence.</td>
+      <td>Increases proportionally with mean_reward.</td>
+    </tr>
+    <tr>
+      <td class="mono">success_rate</td>
+      <td>Fraction of last 100 episodes where return exceeded reward_threshold (set to 3,000 in V4).</td>
+      <td>A binary per-episode pass/fail that summarizes whether the agent is reliably achieving good locomotion or only occasionally. More robust to noisy individual episodes than mean_reward.</td>
+      <td>SAC: 30-70%. CrossQ: 70-90%.</td>
+    </tr>
+    <tr>
+      <td class="mono">fps</td>
+      <td>Environment steps per second of wall-clock time.</td>
+      <td>Diagnostic for computational bottlenecks. Drops indicate memory pressure (swapping) or GPU saturation. With gradient_steps=4 (CrossQ), FPS will be approximately 4x lower than gradient_steps=1, but learning per environment step is 4x higher.</td>
+      <td>500-3000 depending on hardware.</td>
+    </tr>
+    <caption>Table 6. Training metrics tracked by MetricsCallback and their interpretation. All reward values are cumulative episode returns (unnormalized by VecNormalize).</caption>
+  </table>
+
+  <div class="box result">
+    <span class="box-label">Interpreting a training run: what healthy looks like</span>
+    <p>
+      A healthy SAC training run on Humanoid-v4 proceeds in roughly three phases. In the first
+      50k steps, mean_reward is near zero or very low, but ep_length should be increasing as the agent
+      learns not to fall. Critic loss should be decreasing. Between 50k and 300k steps, ep_length
+      approaches 1000 (agent rarely falls) and mean_reward begins to grow as forward locomotion
+      emerges. Beyond 300k steps, mean_reward should continue growing if the critic is stable, reaching
+      2000+ by 500k steps and 3000-5000 by 1M steps. If critic_loss begins to grow after 200k steps
+      (V3 symptom), training is diverging and the gradient clip fix from V4 is required.
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════
+     S7: REFERENCES
+═══════════════════════════════ -->
+<section id="s7" class="refs">
+  <span class="sec-label">Section 7</span>
+  <h2>References</h2>
+  <ol>
+    <li>Haarnoja, T., Zhou, A., Abbeel, P., Levine, S. (2018). <em>Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor.</em> ICML 2018. <span class="arxiv">arXiv:1801.01290</span></li>
+    <li>Haarnoja, T., Zhou, A., Hartikainen, K., Tucker, G., Ha, S., Tan, J., Kumar, V., Zhu, H., Gupta, A., Abbeel, P., Levine, S. (2018). <em>Soft Actor-Critic Algorithms and Applications.</em> <span class="arxiv">arXiv:1812.05905</span></li>
+    <li>Bhatt, A., Palenicek, D., Belousov, B., Argus, M., Amiranashvili, A., Brox, T., Peters, J. (2024). <em>CrossQ: Batch Normalization in Deep Reinforcement Learning for Greater Sample Efficiency and Simplicity.</em> ICLR 2024. <span class="arxiv">arXiv:2301.02328</span></li>
+    <li>Fujimoto, S., van Hoof, H., Meger, D. (2018). <em>Addressing Function Approximation Error in Actor-Critic Methods.</em> ICML 2018. <span class="arxiv">arXiv:1802.09477</span></li>
+    <li>Lillicrap, T., Hunt, J., Pritzel, A., Heess, N., Erez, T., Tassa, Y., Silver, D., Wierstra, D. (2016). <em>Continuous control with deep reinforcement learning.</em> ICLR 2016. <span class="arxiv">arXiv:1509.02971</span></li>
+    <li>Ioffe, S., Szegedy, C. (2015). <em>Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift.</em> ICML 2015. <span class="arxiv">arXiv:1502.03167</span></li>
+    <li>Todorov, E., Erez, T., Tassa, Y. (2012). <em>MuJoCo: A physics engine for model-based control.</em> IROS 2012.</li>
+    <li>Raffin, A., Hill, A., Gleave, A., Kanervisto, A., Ernestus, M., Dormann, N. (2021). <em>Stable-Baselines3: Reliable Reinforcement Learning Implementations.</em> JMLR 22(268). <span class="arxiv">arXiv:2005.05719</span></li>
+  </ol>
+</section>
+
+</main>
+</div><!-- /body-grid -->
+</div><!-- /page -->
+</body>
+</html>
