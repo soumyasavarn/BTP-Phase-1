@@ -5,4 +5,4 @@ August 2025 - September 2025: https://davidstarsilver.wordpress.com/teaching/
 
 October 2025 - November 2025: https://www.kaggle.com/code/soumyasavarn/rl-algo-comparision/edit 
 
-Jan-Feb 2026 - https://www.kaggle.com/code/soumyasavarn/humanoid-training?scriptVersionId=298709847
+January 2026 - February 2026 - https://www.kaggle.com/code/soumyasavarn/humanoid-training?scriptVersionId=298709847
