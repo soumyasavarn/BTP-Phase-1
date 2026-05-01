@@ -1,4 +1,4 @@
-# BTP - Hybrid DDPG algorithms for Humanoid control task
+# BTP - Improving soft actor critic for humanoid control task using attention module
 This repository contains all the research conducted so far in developing and understanding RL algorithms for mechanical systems (not limited) and tradeoffs in real world. Target for phase 1 is learning and early stage research for setting the stage for discovery of a novel algorithm (if possible). Guide: Dr. Shyamanta Hazarika
 
 August 2025 - September 2025: https://davidstarsilver.wordpress.com/teaching/
